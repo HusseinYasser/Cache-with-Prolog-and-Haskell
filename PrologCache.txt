@@ -1,0 +1,336 @@
+%GeneralPart
+bin_List(0,[]).
+bin_List(N,L):-
+             N >0,
+             M is N mod 10,
+             L = [M|T],
+             N2 is N//10,
+             bin_List(N2,T).
+convertBinToDec(S,N):-
+                    bin_List(S,L),
+                    helper_Binary_Con(L,0,N).
+helper_Binary_Con([],_,0).
+helper_Binary_Con([H|T],C,N):-
+                            C1 is C+1,
+                            helper_Binary_Con(T,C1,N1),
+                            X is 2**C,
+                            Y is X * H,
+                            N is Y + N1.
+
+replaceIthItem(Item,[_|T],0,[Item|T]).
+replaceIthItem(Item,[H|T],I,[H|T1]):-
+                                  I>0,
+                                  I1 is I-1,
+                                  replaceIthItem(Item,T,I1,T1).
+
+logBase2(Num,Res):-
+                 helperLog(Num,0,Res).
+helperLog(1,C,C).
+helperLog(N,C,Res):-
+                  N>1, 
+                  N1 is N//2,
+                  C1 is C+1,
+                  helperLog(N1,C1,Res).
+
+getNumBits(_,fullyAssoc,_,0).
+getNumBits(N,setAssoc,_,R):-
+                          logBase2(N,R).
+getNumBits(_,directMap,L,R):-
+                           length(L,Len),
+                           logBase2(Len,R).
+fillZeros(S,0,S).
+fillZeros(S,N,R):-
+                N>0,
+                string_concat("0",S,S1),
+                N1 is N-1,
+                fillZeros(S1,N1,R).
+splitEvery(_,[],[]).
+splitEvery(N,List,[H|T]):-
+                        length(List,S),
+                        S>=N,
+                        helperSplit(N,0,List,H),
+                        helperUpdate(N,List,List2),
+                        splitEvery(N,List2,T).
+splitEvery(N,List,[List]):-
+                      length(List,S),
+                      S>0,
+                      S<N.
+helperUpdate(0,R,R).
+helperUpdate(N,[H|T],R):-
+                     N>0,
+                     L = [H|T],
+                     N1 is N-1,
+                     helperUpdate(N1,T,R).
+helperSplit(N,N,_,[]).
+helperSplit(N,C,[H|T],[H|T2]):-
+                             C<N,
+                             C1 is C+1,
+                             helperSplit(N,C1,T,T2).
+
+
+%Direct Mapping
+
+getDataFromCache(StringAddress,Cache,Data,0,directMap,BitsNum):-
+                                                               atom_number(StringAddress,IntAddress),
+                                                               convertAddress(IntAddress,BitsNum,Tag,Idx,directMap),
+                                                               convertBinToDec(Idx,IntIdx),
+                                                               nth0(IntIdx,Cache,item(tag(X),data(Data),1,_)),
+                                                               atom_number(X,Tag).                    
+                                                               
+
+getDataFromCache2(StringAddress,Cache,Data,0,directMap,BitsNum):-
+                                                       atom_number(StringAddress,NumberAddress),
+                                                       bin_List(NumberAddress,ListAddress),
+                                                       stringIndex(ListAddress,BitsNum,Sindex),
+                                                       string_concat(Stag,Sindex,StringAddress),
+                                                       getIndex(Sindex,Nindex),
+                                                       helperDataCache(Nindex,Stag,Cache,Data).
+
+stringIndex(_,0,"").
+stringIndex([],N,R):-
+                   N>0,
+                   N1 is N-1,
+                   stringIndex([],N1,R1),
+                   string_concat("0",R1,R).                                                       
+stringIndex([H|T],BitsNum,R):-
+                            N is BitsNum-1,
+                            stringIndex(T,N,R1),
+                            string_concat(R1,H,R).       
+getIndex(StringIndex,NumIndex):-
+                              atom_number(StringIndex,IndexBin),
+                              convertBinToDec(IndexBin,NumIndex).
+
+helperDataCache(Nindex,Stag,[_|T],Data):-
+                                Nindex>0,
+                                N is Nindex-1,
+                                helperDataCache(N,Stag,T,Data).
+helperDataCache(0,Stag,[item(tag(Stag),data(Data),1,_)|_],Data).
+
+convertAddress(Bin,BitsNum,Tag,Idx,directMap):-
+                                             C is 10 ** BitsNum,
+                                             Idx is Bin mod C,
+                                             Tag is Bin//C.
+                            
+                                   
+replaceInCache(Tag,Idx,Mem,OldCache,NewCache,ItemData,
+directMap,BitsNum):-
+                  atom_number(SIdx,Idx),
+                  atom_number(STag,Tag),
+                  string_length(SIdx,IdxLen),
+                  string_length(STag,TagLen),
+                  RemIdx is BitsNum - IdxLen,
+                  RemTag is 6 - TagLen - BitsNum,
+                  fillZeros(SIdx,RemIdx,NewIdxS),
+                  fillZeros(STag,RemTag,NewTagS),
+                  string_concat(NewTagS,NewIdxS,AddressString), 
+                  atom_number(AddressString,Address),
+                  convertBinToDec(Address,DecAddress),
+                  convertBinToDec(Idx,DecIdx),
+                  nth0(DecAddress,Mem,ItemData),
+                  replaceIthItem(item(tag(NewTagS),data(ItemData),1,0),OldCache,DecIdx,NewCache).
+
+
+%Full Assosiactive Mapping
+
+getDataFromCache(StringAddress,[item(tag(StringAddress),data(Data),1,_)|_],Data,0,fullyAssoc,_).
+getDataFromCache(StringAddress,[item(tag(X),_,_,_)|T],Data,HopsNum,fullyAssoc,_):-
+                                                          X\=StringAddress,
+                                                          getDataFromCache(StringAddress,T,Data,HopsNum1,fullyAssoc,_),
+                                                          HopsNum is HopsNum1 + 1.
+
+convertAddress(Bin,_,T,Idx,fullyAssoc):-
+                                    T=Bin.
+ 
+
+replaceInCache(Tag,_,Mem,OldCache,NewCache,ItemData,fullyAssoc,_):-
+        %atom_number(SIdx,Idx),
+        atom_number(STag,Tag),
+        string_length(STag,TagLen),
+        RemTag is 6 - TagLen,
+        fillZeros(STag,RemTag,NewSTag),
+        StrAddress = NewSTag,
+        atom_number(StrAddress,BinAddress),
+        convertBinToDec(BinAddress,DecAddress),
+        nth0(DecAddress,Mem,ItemData),
+        checkValidity(OldCache,0,Pos),
+        modifyCacheN(OldCache,NewCache1),
+        replaceIthItem(item(tag(NewSTag),data(ItemData),1,0),NewCache1,Pos,NewCache).
+        %modifyCache(NewCache1,0,0,ItemData,NewCache),
+replaceInCache(Tag,_,Mem,OldCache,NewCache,ItemData,fullyAssoc,_):-
+        % atom_number(SIdx,Idx),
+        atom_number(STag,Tag),
+        string_length(STag,TagLen),
+        RemTag is 6 - TagLen,
+        fillZeros(STag,RemTag,NewSTag),
+        StrAddress = NewSTag,
+        atom_number(StrAddress,BinAddress),
+        convertBinToDec(BinAddress,DecAddress),
+        nth0(DecAddress,Mem,ItemData),
+        \+checkValidity(OldCache,0,Pos),
+        checkMaxOrder(OldCache,0,0,0,Pos),
+        modifyCacheN(OldCache,NewCache1),
+        replaceIthItem(item(tag(NewSTag),data(ItemData),1,0),NewCache1,Pos,NewCache).
+
+checkValidity([item(_,_,0,_)|_],I,I).
+checkValidity([item(_,_,1,_)|T],I,R):-
+                                    I1 is I+1,
+                                    checkValidity(T,I1,R).
+checkMaxOrder([],_,MaxI,_,MaxI).
+checkMaxOrder([item(_,_,_,O)|T],I,MaxI,MaxO,Res):-
+                                          O>MaxO,
+                                          I1 is I+1,
+                                          checkMaxOrder(T,I1,I,O,Res).
+checkMaxOrder([item(_,_,_,O)|T],I,MaxI,MaxO,Res):-
+                                          O=<MaxO,
+                                          I1 is I+1,
+                                          checkMaxOrder(T,I1,MaxI,MaxO,Res).
+
+modifyCache(NewCache1,I,_,_,NewCache1):-
+                                 length(NewCache1,I).
+modifyCache(NewCache1,I,Compare,DataComp,NewCache):-
+                                 nth0(I,NewCache1,Item),
+                                 Item = item(Tag,data(D),V,Order),
+                                 Order = Compare,
+                                 D\=DataComp,
+                                 Order2 is Order+1,  
+                                 replaceIthItem(item(Tag,Idx,V,Order2),NewCache1,I,NewCache2),
+                                 Compare2 = Order2,
+                                 modifyCache(NewCache2,0,Compare2,D,NewCache).
+modifyCache(NewCache1,I,Compare,DataComp,NewCache):-
+                                 nth0(I,NewCache1,Item),
+                                 Item = item(_,_,_,Order),
+                                 Order \= Compare,  
+                                 I1 is I+1,
+                                 modifyCache(NewCache1,I1,Compare,DataComp,NewCache).
+modifyCache(NewCache1,I,Compare,DataComp,NewCache):-
+                                 nth0(I,NewCache1,Item),
+                                 Item = item(Tag,data(D),V,Order),
+                                 Order = Compare,
+                                 D=DataComp,  
+                                 I1 is I+1,
+                                 modifyCache(NewCache1,I1,Compare,D,NewCache).
+
+modifyCacheN([H|T],[H2|T2]):-
+                           H = item(tag(Tag),data(D),1,Order),
+                           O2 is Order+1,
+                           H2 = item(tag(Tag),data(D),1,O2),
+                           modifyCacheN(T,T2).
+modifyCacheN([],[]).                                 
+modifyCacheN([H|T],[H|T2]):-
+                          H = item(_,_,0,_),
+                          modifyCacheN(T,T2).
+
+
+                                                                        
+                                                                                                                                
+%SetAssociative
+
+getDataFromCache(StringAddress,Cache,Data,HopsNum,setAssoc,SetsNum):-
+                                                            length(Cache,LC),
+                                                            N is LC//SetsNum,
+                                                            splitEvery(N,Cache,Cache2),
+                                                            getNumBits(SetsNum,setAssoc,_,BitsNum),
+                                                            atom_number(StringAddress,NumAddress),
+                                                            convertAddress(NumAddress,SetsNum,Tag,Idx,setAssoc),
+                                                            convertBinToDec(Idx,DecIdx),
+                                                            nth0(DecIdx,Cache2,RES),
+                                                            atom_number(STag,Tag),
+                                                            string_length(STag,Len),
+                                                            Rem is BitsNum + Len,
+                                                            Rem1 is 6 - Rem,
+                                                            fillZeros(STag,Rem1,NewSTag),
+                                                            helperGetDataSetAssoc(NewSTag,RES,HopsNum,Data).
+															
+helperGetDataSetAssoc(NewSTag,[item(tag(NewSTag),data(Data),1,_)|_],0,Data).
+helperGetDataSetAssoc(NewSTag,[item(tag(X),_,_,_)|T],HopsNum,Data):- 
+                                                               X\=NewSTag,
+                                                               helperGetDataSetAssoc(NewSTag,T,HopsNum2,Data),
+                                                               HopsNum is 1+HopsNum2.   
+                                                            
+
+convertAddress(Bin,SetsNum,Tag,Idx,setAssoc):-
+                                           logBase2(SetsNum,BitsNum),
+                                           N is 10 ** BitsNum,
+                                           Tag is Bin // N,
+                                           Idx is Bin mod N.
+
+replaceInCache(Tag,Idx,Mem,OldCache,NewCache,ItemData,setAssoc,SetsNum):-
+                                                                logBase2(SetsNum,BitsNum),
+                                                                convertBinToDec(Idx,DecIdx),
+                                                                atom_number(SIdx,Idx),
+                                                                atom_number(STag,Tag),
+                                                                string_length(SIdx,OldIdxLen),
+                                                                RemIdx is BitsNum - OldIdxLen,
+                                                                fillZeros(SIdx,RemIdx,NewSIdx),
+                                                                string_length(STag,OldTagLen),
+                                                                RemTag is 6 - BitsNum - OldTagLen,
+                                                                fillZeros(STag,RemTag,NewSTag),
+                                                                string_concat(NewSTag,NewSIdx,StringAddress),
+                                                                atom_number(StringAddress,BinAddress),
+                                                                convertBinToDec(BinAddress,DecAddress),
+                                                                nth0(DecAddress,Mem,ItemData),
+                                                                splitEvery(SetsNum,OldCache,SplitedCache),
+                                                                nth0(DecIdx,SplitedCache,SmallCache),
+                                                                helperReplaceSetAssoc(NewSTag,ItemData,SmallCache,NewSmallCache),
+                                                                replaceIthItem(NewSmallCache,SplitedCache,DecAddress,NewSplited),
+                                                                collect(NewSplited,[],NewCache).
+
+
+
+helperReplaceSetAssoc(NewSTag,ItemData,SmallCache,NewSmallCache):-
+                                                               inValid(SmallCache,0,Pos),
+                                                               modifyCacheSet(SmallCache,ModifiedSmallCache),
+                                                               replaceIthItem(item(tag(NewSTag),data(ItemData),1,0),ModifiedSmallCache,Pos,NewSmallCache).
+helperReplaceSetAssoc(NewSTag,ItemData,SmallCache,NewSmallCache):-
+                                                               \+inValid(SmallCache,0,Pos),
+                                                                getMaxOrder(SmallCache,0,0,0,Pos),
+                                                                modifyCacheSet(SmallCache,ModifiedSmallCache),
+                                                                replaceIthItem(item(tag(NewSTag),data(ItemData),1,0),ModifiedSmallCache,Pos,NewSmallCache).
+
+modifyCacheSet([],[]).
+modifyCacheSet([item(Tag,Data,1,Order)|T],[item(Tag,Data,1,Order2)|T2]):-
+                                                          Order2 is Order+1,
+                                                          modifyCacheSet(T,T2).
+modifyCacheSet([item(Tag,Data,0,Order)|T],[item(Tag,Data,0,Order)|T2]):-
+                                                          modifyCacheSet(T,T2).
+
+
+inValid([item(_,_,0,_)|_],N,N).
+inValid([item(_,_,1,_)|T],N,R):-
+                              N1 is N+1,
+                              inValid(T,N1,R).
+
+getMaxOrder([],_,_,MaxI,MaxI).
+getMaxOrder([item(_,_,1,Order)|T],CurrIndex,MaxO,MaxI,Res):-
+                                                         Order>MaxO,
+                                                         Curr2 is CurrIndex+1,
+                                                         getMaxOrder(T,Curr2,Order,CurrIndex,Res).
+getMaxOrder([item(_,_,1,Order)|T],CurrIndex,MaxO,MaxI,Res):-
+                                                         \+Order>MaxO,
+                                                         Curr2 is CurrIndex+1,
+                                                         getMaxOrder(T,Curr2,MaxO,MaxI,Res).
+
+collect([],ACC,ACC).
+collect([H|T],ACC,Res):-
+                      append(ACC,H,ACC2),
+                      collect(T,ACC2,Res).            
+
+%PreImplementedPredicates
+runProgram([],OldCache,_,OldCache,[],[],Type,_).
+runProgram([Address|AdressList],OldCache,Mem,FinalCache,
+[Data|OutputDataList],[Status|StatusList],Type,NumOfSets):-
+getNumBits(NumOfSets,Type,OldCache,BitsNum),
+getData(Address,OldCache,Mem,NewCache,Data,HopsNum,Type,BitsNum,Status),
+runProgram(AdressList,NewCache,Mem,FinalCache,OutputDataList,StatusList,
+Type,NumOfSets).
+
+getData(StringAddress,OldCache,Mem,NewCache,Data,HopsNum,Type,BitsNum,hit):-
+getDataFromCache(StringAddress,OldCache,Data,HopsNum,Type,BitsNum),
+NewCache = OldCache.
+getData(StringAddress,OldCache,Mem,NewCache,Data,HopsNum,Type,BitsNum,miss):-
+\+getDataFromCache(StringAddress,OldCache,Data,HopsNum,Type,BitsNum),
+atom_number(StringAddress,Address),
+convertAddress(Address,BitsNum,Tag,Idx,Type),
+replaceInCache(Tag,Idx,Mem,OldCache,NewCache,Data,Type,BitsNum).     
+
+                                                                                                                 
